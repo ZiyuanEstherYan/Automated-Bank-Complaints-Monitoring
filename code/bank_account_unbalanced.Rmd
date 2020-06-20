@@ -1,0 +1,165 @@
+---
+title: "bank_account_unbalanced"
+author: "Ziyuan(Esther) Yan"
+date: "3/8/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(tidytext)
+library(keras)
+```
+
+# Bank Account: Create a balanced sample
+
+```{r}
+bank_account <- read_rds("data/bank_account_checking.rds")
+```
+
+```{r}
+bank_account <- bank_account %>%
+  mutate(important = (ifelse(`Company response to consumer` == "Closed with monetary relief", 1, 0)))
+
+table(bank_account$important)
+```
+
+```{r}
+maxWords <- 8000 # only use the top 8000 words
+tokenizer <- text_tokenizer(num_words = maxWords) %>%
+  fit_text_tokenizer(bank_account$`Consumer complaint narrative`)
+
+sequences <- texts_to_sequences(tokenizer, bank_account$`Consumer complaint narrative`)
+
+word_index <- tokenizer$word_index
+
+nReviews <- nrow(bank_account)
+nReviews
+```
+
+```{r}
+## one-hot code tokens and reshuffle data
+x <- sequences_to_matrix(tokenizer, sequences, mode = c("binary"))
+y <- as.numeric(bank_account$important)
+```
+
+```{r}
+bank_account <- bank_account %>%
+  mutate(wordCount = sapply(strsplit(`Consumer complaint narrative`, " "), length),
+         std_wordCount = standardize(wordCount))
+```
+
+```{r}
+x <- cbind(x, bank_account$std_wordCount)
+```
+
+```{r}
+set.seed(1234)
+shuffIndex <- sample(1:nReviews)
+nTrain <- floor(nReviews * 0.7)
+
+trainIndex <- shuffIndex[1:nTrain]
+testIndex <- shuffIndex[(nTrain + 1):nReviews]
+
+xTrain <- x[trainIndex, ]
+yTrain <- y[trainIndex]
+
+xTest <- x[testIndex, ]
+yTest <- y[testIndex]
+```
+
+```{r}
+model <- keras_model_sequential() %>%
+  layer_dense(units = 256, activation = "relu", input_shape = ncol(x)) %>%
+  layer_dense(units = 256, activation = "relu") %>%
+  layer_dense(units = 256, activation = "relu") %>%
+  layer_dense(units = 1, activation = "sigmoid")
+model
+```
+
+```{r}
+model %>% compile(
+  optimizer = "rmsprop",
+  loss = "binary_crossentropy",
+  metrics = c("AUC")
+)
+```
+
+```{r}
+historyT <- model %>% fit(
+  xTrain,
+  yTrain,
+  epochs = 20,
+  batch_size = 256,
+  validation_split = 0.3
+)
+```
+
+```{r}
+## re-train at optimized epoch
+theEpoch <- which.min(historyT$metrics$val_loss)
+
+model <- keras_model_sequential() %>%
+  layer_dense(units = 256, activation = "relu", input_shape = ncol(x)) %>%
+  layer_dense(units = 256, activation = "relu") %>%
+  layer_dense(units = 256, activation = "relu") %>%
+  layer_dense(units = 1, activation = "sigmoid")
+
+model %>% compile(
+  optimizer = "rmsprop",
+  loss = "binary_crossentropy",
+  metrics = c("AUC")
+)
+
+history <- model %>% fit(xTrain, yTrain, epochs = theEpoch, batch_size = 256)
+
+## @knitr predictModel
+
+results <- model %>% evaluate(xTest, yTest)
+results
+```
+
+```{r}
+prediction <- model %>% predict(xTest)
+
+xTest_bank_org <- bank_account[testIndex,]
+xTest_bank_org <- cbind(xTest_bank_org, prediction) %>%
+  select(`Consumer complaint narrative`, `Company response to consumer`, important, prediction) 
+
+#%>%
+  #arrange(desc(prediction))
+
+#a <- xTest_bank_org %>%
+ # slice(1:20)
+
+#a
+```
+
+```{r}
+theTestIndices <- c(6453, 4266, 6445)
+theTestIndices
+```
+
+```{r}
+cat(str_wrap(credit_card$`Consumer complaint narrative`[testIndex[theTestIndices[1]]], width = 60))
+```
+
+```{r}
+cat(str_wrap(credit_card$`Consumer complaint narrative`[testIndex[theTestIndices[2]]], width = 60))
+```
+
+```{r}
+cat(str_wrap(credit_card$`Consumer complaint narrative`[testIndex[theTestIndices[3]]], width = 60))
+```
+
+```{r}
+model %>% predict(xTest[theTestIndices, ])
+```
+
+
+
+
+

@@ -1,0 +1,126 @@
+---
+title: "Balanced_Bank_Account_Shiyi"
+author: "Ziyuan(Esther) Yan"
+date: "3/8/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(keras)
+library(tidyverse)
+library(readr)
+library(tensorflow)
+library(radiant)
+```
+
+## Balanced - Bank Account
+```{r}
+bank_account_checking_total_data <- read_csv("data/bank account checking total data.csv")
+
+set.seed(1234)
+reviews <- bank_account_checking_total_data %>% 
+  mutate(important = `Company response to consumer` == "Closed with monetary relief") %>%
+  group_by(important) %>%
+  sample_n(5811) %>%
+  ungroup()
+
+table(reviews$important)
+```
+
+```{r}
+maxWords <- 10000
+
+tokenizer <- text_tokenizer(num_words = maxWords) %>%
+  fit_text_tokenizer(reviews$`Consumer complaint narrative`)
+
+sequences <- texts_to_sequences(tokenizer, reviews$`Consumer complaint narrative`)
+```
+
+```{r}
+maxLength <- 500
+
+embedding_dim_text1 <- 150
+
+data <- pad_sequences(sequences, maxlen = maxLength)
+```
+
+```{r}
+nReviews <- nrow(reviews)
+
+set.seed(1234)
+shuffIndex <- sample(1:nReviews)
+
+nTrain <- floor(nReviews * 0.7)
+trainIndex <- shuffIndex[1:nTrain]
+testIndex <- shuffIndex[(nTrain+1):nReviews]
+
+xTrain <- data[trainIndex,]
+xTest <- data[testIndex,]
+
+y <- as.numeric(reviews$important)
+yTrain <- y[trainIndex]
+yTest <- y[testIndex]
+```
+
+```{r}
+model <- keras_model_sequential() %>%
+  layer_embedding(input_dim = maxWords,
+                  output_dim = embedding_dim_text1,
+                  input_length = maxLength,
+                  name = "embedding_text") %>%
+  layer_flatten() %>%
+  layer_dense(units = 48, activation = "relu") %>%
+  layer_dense(units = 48, activation = "relu") %>%
+  layer_dense(units = 1, activation = "sigmoid")
+
+model %>% 
+  compile(loss = "binary_crossentropy",
+          optimizer = "rmsprop",
+          metric="accuracy"
+  )
+
+history <- model %>% 
+  fit(x = xTrain,
+      y = yTrain,
+      epochs = 10,
+      batch_size = 256,
+      validation_split = 0.2
+  )
+```
+
+```{r}
+theEpoch = which.min(history$metrics$val_loss)
+
+model <- keras_model_sequential() %>%
+  layer_embedding(input_dim = maxWords,
+                  output_dim = embedding_dim_text1,
+                  input_length = maxLength,
+                  name = "embedding_text") %>%
+  layer_flatten() %>%
+  layer_dense(units = 48, activation = "relu") %>%
+  layer_dense(units = 48, activation = "relu") %>%
+  layer_dense(units = 1,activation = "sigmoid")
+
+model %>% 
+  compile(loss = "binary_crossentropy",
+          optimizer = "rmsprop",
+          metric = "accuracy"
+  )
+
+
+history <- model %>% 
+  fit(x = xTrain,
+      y = yTrain,
+      epochs = theEpoch,
+      batch_size = 256,
+      validation_split = 0.0
+  )
+
+
+resultsEmbed <- model %>% evaluate(xTest, yTest)
+resultsEmbed
+```

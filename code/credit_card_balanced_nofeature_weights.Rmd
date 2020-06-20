@@ -1,0 +1,93 @@
+---
+title: "credit_card_balanced_nofeature_weights"
+author: "Ziyuan(Esther) Yan"
+date: "3/8/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(keras)
+```
+
+##### Topic model on total monetary complaints and one product: 
+#### Start from this
+
+```{r}
+# import data
+## dat <- read_csv("../data/credit card total data.csv")
+## saveRDS(dat, "data/credit_card.rds")
+```
+
+# Credit card: Create a balanced sample
+
+```{r}
+credit_card <- read_rds("../data/credit_card.rds")
+```
+
+```{r}
+set.seed(1234)
+credit_card <- credit_card %>%
+  mutate(important = (ifelse(`Company response to consumer` == "Closed with monetary relief", 1, 0))) %>%
+  group_by(important) %>%
+  sample_n(7186)
+table(credit_card$important)
+```
+
+```{r}
+maxWords <- 8000 # only use the top 8000 words
+tokenizer <- text_tokenizer(num_words = maxWords) %>%
+  fit_text_tokenizer(credit_card$`Consumer complaint narrative`)
+
+sequences <- texts_to_sequences(tokenizer, credit_card$`Consumer complaint narrative`)
+
+word_index <- tokenizer$word_index
+
+nReviews <- nrow(credit_card)
+nReviews
+```
+
+```{r}
+## one-hot code tokens and reshuffle data
+x <- sequences_to_matrix(tokenizer, sequences, mode = c("binary"))
+y <- as.numeric(credit_card$important)
+```
+
+```{r}
+credit_card <- credit_card %>%
+  mutate(wordCount = sapply(strsplit(`Consumer complaint narrative`, " "), length))
+```
+
+```{r}
+x <- cbind(x, credit_card$wordCount)
+```
+
+```{r}
+set.seed(1234)
+shuffIndex <- sample(1:nReviews)
+nTrain <- floor(nReviews * 0.7)
+
+trainIndex <- shuffIndex[1:nTrain]
+testIndex <- shuffIndex[(nTrain + 1):nReviews]
+
+xTrain <- x[trainIndex, ]
+yTrain <- y[trainIndex]
+
+xTest <- x[testIndex, ]
+yTest <- y[testIndex]
+```
+
+```{r}
+model <- keras_model_sequential() %>%
+  layer_dense(units = 256, activation = "relu", input_shape = ncol(x)) %>%
+  layer_dense(units = 256, activation = "relu") %>%
+  layer_dense(units = 256, activation = "relu") %>%
+  layer_dense(units = 1, activation = "sigmoid")
+model
+```

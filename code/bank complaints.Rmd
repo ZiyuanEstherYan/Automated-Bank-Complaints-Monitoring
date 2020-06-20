@@ -1,0 +1,194 @@
+---
+title: "unstructured data"
+author: "aki"
+date: "1/21/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(readxl)
+library(tidyverse)
+library(tidytext)
+library(scales)
+library(radiant)
+library(topicmodels)
+library(SnowballC)
+library(LDAvis)
+library(textstem)
+```
+
+##### Data cleaning (preparation):
+```{r}
+data=read_excel('consumer complaints subset data.xlsx')
+
+data_labeled=data%>% mutate(important=(ifelse(`Company response to consumer`=='Closed with monetary relief',1,0)))
+
+product=data_labeled$Product
+```
+
+
+combine product category:
+```{r}
+falsename=grep("^Credit",ignore.case=TRUE,product) # identify product whose name starts with "Credit"
+
+falsename1=grep("^Prepaid",ignore.case=TRUE,product)
+falsename2=grep("^Credit reporting",ignore.case=TRUE,product)
+falsename3=grep("^Money transfer",ignore.case=TRUE,product)
+falsename4=grep("loan",ignore.case=TRUE,product)
+
+for (i in falsename){
+  data_labeled$Product[i]="Credit Card"
+}
+
+for (i in falsename1){
+  data_labeled$Product[i]="Credit Card"
+}
+
+for (i in falsename2){
+  data_labeled$Product[i]="Credit reporting"
+}
+
+for (i in falsename3){
+  data_labeled$Product[i]="Money transfers"
+}
+
+for (i in falsename4){
+  data_labeled$Product[i]="Loan"
+}
+
+```
+
+##### EDA
+
+
+```{r}
+#从绝对数量来说，哪种产品的金钱补偿投诉案件最多：credit card
+monetarycases=data_labeled %>% 
+  group_by(Product) %>% 
+  summarize(n_monetarycases=sum(important),ntotal=n()) %>% 
+  arrange(desc(n_monetarycases))
+
+monetarycases
+
+#ggplot(monetarycases,aes(x=fct_reorder(Product,n_monetarycases),y=n_monetarycases))+geom_bar(stat='identity')
+       
+visualize(monetarycases,
+          xvar="Product",
+          yvar="n_monetarycases",
+          type="bar",
+          labs=list(x="product",y="number of monetary compensation"),
+          custom=TRUE
+          )+
+          theme(axis.text.x=element_text(angle = 45, hjust = 1))
+
+#每个种类里面哪个金钱补偿的投诉最多:checking or saving account,bank account
+visualize(data_labeled,
+          xvar="Product",
+          yvar="important",
+          type="bar",
+          labs=list(x="product",y="proportion of monetary compensation"),
+          custom=TRUE
+          )+
+          theme(axis.text.x=element_text(angle = 45, hjust = 1))
+         
+```
+
+So, we should put more emphasis on the 3 products: credit card,checking or saving account and bank account.
+
+
+##### Word Frequency:
+
+```{r}
+#add meaningless words and lemmatize remaning:
+
+customWords <- c('xx','xxxx','bank','citibank','boa','america','citi')
+
+total_complaints= data_labeled %>%
+  unnest_tokens(word,`Consumer complaint narrative`)%>%
+  mutate(lemma=lemmatize_words(word))%>%
+  filter(! lemma %in% customWords) %>%
+  anti_join(stop_words,by=c('lemma'='word')) %>%
+  count(Product,important,lemma) ################################################
+
+########################################################
+x = data_labeled %>%
+  unnest_tokens(word,`Consumer complaint narrative`)%>%
+  mutate(lemma=lemmatize_words(word))%>%
+  filter(! lemma %in% customWords) %>%
+  anti_join(stop_words,by=c('lemma'='word'))
+########################################################
+
+#visualize:
+wordFreq=total_complaints %>% 
+  group_by(lemma) %>% 
+  summarize(freq=sum(n)) %>% 
+  arrange(desc(freq))
+
+m_wordFreq=total_complaints %>% 
+  filter(important==1)%>% group_by(lemma) %>% 
+  summarize(freq=sum(n)) %>% 
+  arrange(desc(freq))
+
+totalcomplain_plot=wordFreq %>% 
+  slice(1:25) %>%
+  ggplot(aes(x=fct_reorder(lemma,freq),y=freq)) +
+  geom_bar(stat='identity') + 
+  coord_flip() + 
+  labs(x='word',y='word frequency')
+
+totalcomplain_plot
+
+monetary_complain_plot=m_wordFreq %>% 
+  slice(1:25) %>%
+  ggplot(aes(x=fct_reorder(lemma,freq),y=freq)) + 
+  geom_bar(stat='identity') + 
+  coord_flip() + 
+  labs(x='word',y='word frequency')
+
+monetary_complain_plot
+```
+
+Looking at all of the whole bank complaints, credit card related payment issue such as late fee may account for a big proportion.
+
+But different business department will have different urgent complaints.
+
+Let's do topic models by Product.
+
+
+```{r}
+# credit card complaints: tf_idf高的是低频词，可能是样本数量较小，看不出什么意义
+credit_card=total_complaints%>%filter(Product=='Credit Card')
+
+credit_cardTF= credit_card %>%
+  group_by(important,lemma) %>%
+  summarize(number=sum(n)) %>%
+  bind_tf_idf(lemma,important,number) %>%
+  arrange(desc(tf_idf)) %>%
+  slice(1:20)
+  
+
+# credit card bigram: 两个词试试,这里有问题，split出来null
+credit_cardBi <- data_labeled %>% filter(Product=='Credit Card') %>%
+  select(Product,`Consumer complaint narrative`) %>%
+  rename(text=`Consumer complaint narrative`)
+
+credit_cardBi %>% unnest_tokens(bigram,text,token = "ngrams", n = 2)
+
+```
+
+到这里以上都可以不用管。
+从这里往下开始做：
+
+
+##### Topic model on total monetary complaints and one product: 
+#### Start from this
+
+```{r}
+#import data
+data_total_monetary=read_csv('data/Monetary Complaints total data.csv')
+
+data_credit_card=read_csv('data/credit card total data.csv')
+data_bank_aacount=read_csv('data/bank account checking total data.csv')
+
+```

@@ -1,0 +1,168 @@
+---
+title: "Bank_Account_Checking"
+author: "Ziyuan(Esther) Yan"
+date: "2/3/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(topicmodels)
+library(tidytext)
+library(SnowballC)
+library(LDAvis)
+library(textstem)
+library(scales)
+```
+
+```{r}
+# save excel file to rds
+# Only run once
+dat = read_csv('data/bank account checking total data.csv')
+saveRDS(dat, "bank_account_checking.rds")
+```
+
+## Load Dataset and Create Labels
+```{r}
+bank_account_checking <- readRDS("~/git/MGTA 495 Unstructured Data/unstructered_data_project/data/bank_account_checking.rds")
+```
+
+```{r}
+bank_account_checking <- bank_account_checking %>%
+  mutate(Monetary = ifelse(`Company response to consumer` == "Closed with monetary relief", 1, 0))
+```
+
+```{r}
+# Split dataset into monetary and non-monetary
+#BAC_monetary <- bank_account_checking %>%
+  #filter(`Company response to consumer` == "Closed with monetary relief")
+
+#BAC_no_montary <- bank_account_checking %>%
+  #anti_join(BAC_monetary)
+```
+
+```{r}
+customWords <- c('xx','xxxx')
+freqLimit <- 20
+minLength <- 30
+numTopics <- c(5, 10, 15)
+```
+
+## Monetary Unigram
+```{r}
+# convert complaints to unigrams and remove stop words, lemmatize all unigrams
+complaintT_M <- bank_account_checking %>%
+  filter(Monetary == 1) %>%
+  unnest_tokens(word, `Consumer complaint narrative`) %>%
+  anti_join(stop_words) %>%
+  mutate(lemma = lemmatize_words(word)) 
+
+wordCount_M <- complaintT_M %>%
+  count(lemma,sort = T)
+
+# remove infrequent words and common words
+vocab_M <- wordCount_M %>%
+  filter(n >= freqLimit)
+
+complaintT_M <- complaintT_M %>%
+  filter(lemma %in% vocab_M$lemma) %>%
+  filter(!lemma %in% customWords)
+```
+
+```{r}
+# remove very short reviews
+complaintLength_M <- complaintT_M %>%
+  count(`Complaint ID`)
+
+complaintLength_M <- complaintLength_M %>%
+  filter(n >= minLength)
+```
+
+```{r}
+# create document term matrix for use in LDA 
+dtmUni_M <- complaintT_M %>%
+  filter(`Complaint ID` %in% complaintLength_M$`Complaint ID`) %>%
+  count(`Complaint ID`,lemma) %>%
+  cast_dtm(`Complaint ID`, lemma, n)
+```
+
+```{r}
+for (theNum in c(1:length(numTopics))){
+  theLDA <- LDA(dtmUni_M, k = numTopics[theNum], method="Gibbs",
+                control = list(alpha = 1/numTopics[theNum], iter = 5000, burnin = 10000, seed = 1234))
+  
+  saveRDS(theLDA,file=paste0('data/BAC_Monetary',numTopics[theNum],'.rds'))
+}
+```
+
+## Non-Monetary Unigram
+```{r}
+# convert complaints to unigrams and remove stop words, lemmatize all unigrams
+complaintT_NM <- bank_account_checking %>%
+  filter(Monetary == 0) %>%
+  unnest_tokens(word, `Consumer complaint narrative`) %>%
+  anti_join(stop_words) %>%
+  mutate(lemma = lemmatize_words(word)) 
+
+wordCount_NM <- complaintT_NM %>%
+  count(lemma,sort = T)
+
+# remove infrequent words and common words
+vocab_NM <- wordCount_NM %>%
+  filter(n >= freqLimit)
+
+complaintT_NM <- complaintT_NM %>%
+  filter(lemma %in% vocab_M$lemma) %>%
+  filter(!lemma %in% customWords)
+```
+
+```{r}
+# remove very short reviews
+complaintLength_NM <- complaintT_NM %>%
+  count(`Complaint ID`)
+
+complaintLength_NM <- complaintLength_NM %>%
+  filter(n >= minLength)
+```
+
+```{r}
+# create document term matrix for use in LDA 
+dtmUni_NM <- complaintT_NM %>%
+  filter(`Complaint ID` %in% complaintLength_M$`Complaint ID`) %>%
+  count(`Complaint ID`,lemma) %>%
+  cast_dtm(`Complaint ID`, lemma, n)
+```
+
+```{r}
+for (theNum in c(1:length(numTopics))){
+  theLDA <- LDA(dtmUni_NM, 
+                k = numTopics[theNum], 
+                method="Gibbs",
+                control = list(alpha = 1/numTopics[theNum], iter = 5000, burnin = 10000, seed = 1234))
+  saveRDS(theLDA,file=paste0('data/BAC_Non-Monetary',numTopics[theNum],'.rds'))
+}
+```
+
+## Monetary Bigram
+```{r}
+# convert complaints to bigrams and remove stop words, lemmatize all unigrams
+complaintT_NM <- bank_account_checking %>%
+  filter(Monetary == 1) %>%
+  unnest_tokens(word, `Consumer complaint narrative`, token = "ngrams", n = 2) %>%
+  mutate(lemma = lemmatize_words(word))
+```
+
+
+
+
+
+
+
+
+
+
+
