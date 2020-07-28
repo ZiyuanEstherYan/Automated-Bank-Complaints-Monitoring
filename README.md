@@ -1,7 +1,7 @@
 # Automated Bank Complaints Monitoring
 
 ## Summary of Project
-The purpose of this project is to detect potential credit card transaction fraud. There are mainly three ways that could cause credit card transaction fraud, which are lost/stolen cards, common points of compromise (merchants “steal” many cards, counterfeit cards, skimmers at gas stations, POSs, restaurants, or stores, etc.), and online account hacking. This project is conducted based on over 96,000 historical credit card transaction records with labeled fraud. The best machine learning model for the out-of-time (test) data is used to calculate the overall saving by detecting frauds. Based on the result, a score cutoff was set to intercept credit card transactions. This is an supervised machine learning project.
+The purpose of this project is to rank bank complaints so that the cases that need monetary compensation can be dealt with first. Exploratory analysis was first performed to determine what factors to include in the predictive model. Three deep learning models were trained to compare the result and the best model was used for the binary prediction. Cases were sorted in descending order of the predicted probabilities. 
 
 ### Language: R
 
